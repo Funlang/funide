@@ -1,0 +1,155 @@
+# Fun language TextMate grammar
+# ==============================
+# Scope name: source.fun
+# Root:       https://funlang.org
+#
+# Token definitions derived from the Fun implementation:
+#   - src/parse/bnf/lex.l      (lexer)
+#   - src/parse/bnf/yacc.y     (grammar)
+#   - src/parse/id.inc         (keyword table)
+#
+# Summary of the lexical rules implemented here:
+#   Identifiers : start [$ _ @ A-Z a-z], continue [$_@A-Za-z0-9]
+#   Numbers     : 123 | 1.5 | .5 | 1e-3 | 0x1F | 0b101
+#   Strings     : '...' "..." `...`  (doubled quote escapes, e.g. 'it''s')
+#   Time        : @"..." @'...' @`...`
+#   Regex       : /.../flags  %...%flags  $"..."flags
+#   Comments    : #  line comment   //  line comment   #* ... #  block comment
+#   Operators   : & + - * / ^ << >> < > != <> <= >= =~ !~ = += -= *= &=
+#                 -> |  and the dot-operator form .<opchars>  (e.g. ?.)
+---
+# http://www.sublimetext.com/docs/3/syntax.html
+name: Fun
+scopeName: source.fun
+fileTypes:
+  - fun
+patterns:
+  - include: '#comments'
+  - include: '#regex'
+  - include: '#strings'
+  - include: '#numbers'
+  - include: '#constants'
+  - include: '#language-variables'
+  - include: '#keywords'
+  - include: '#operators'
+  - include: '#identifiers'
+repository:
+  comments:
+    patterns:
+      # Block comment: '#*' ... '#'
+      # (see lex.l comment rule and fun/demo/all.fun usage: `#*` ... `##`)
+      - name: comment.block.fun
+        begin: '#\*'
+        end: '#'
+        beginCaptures:
+          '0': { name: punctuation.definition.comment.begin.fun }
+        endCaptures:
+          '0': { name: punctuation.definition.comment.end.fun }
+      # Line comment starting with '#'
+      - name: comment.line.number-sign.fun
+        begin: '#(?![*])'
+        end: '($)'
+        beginCaptures:
+          '0': { name: punctuation.definition.comment.fun }
+      # Line comment starting with '//'
+      - name: comment.line.double-slash.fun
+        begin: '//'
+        end: '($)'
+        beginCaptures:
+          '0': { name: punctuation.definition.comment.fun }
+
+  regex:
+    patterns:
+      # /.../flags  (slash-delimited; a closing '/' and optional lowercase flags)
+      - name: string.regexp.fun
+        match: '/([^/\s]+)/[a-z]*'
+      # %...%flags  (percent-delimited regex; '%' is never modulo in Fun)
+      - name: string.regexp.fun
+        match: '%([^%\s]+)%[a-z]*'
+      # $"..."flags  /  $'...'flags  /  $`...`flags
+      - name: string.regexp.fun
+        match: '\$(?:("([^"]*)"|''([^'']*)''|`([^`]*)`))[a-z]*'
+
+  strings:
+    patterns:
+      # Double-quoted string, doubled "" escape
+      - name: string.quoted.double.fun
+        begin: '"'
+        end: '"'
+        beginCaptures:
+          '0': { name: punctuation.definition.string.begin.fun }
+        endCaptures:
+          '0': { name: punctuation.definition.string.end.fun }
+        patterns:
+          - name: constant.character.escape.fun
+            match: '""'
+      # Single-quoted string, doubled '' escape
+      - name: string.quoted.single.fun
+        begin: "'"
+        end: "'"
+        beginCaptures:
+          '0': { name: punctuation.definition.string.begin.fun }
+        endCaptures:
+          '0': { name: punctuation.definition.string.end.fun }
+        patterns:
+          - name: constant.character.escape.fun
+            match: "''"
+      # Backtick-quoted string, doubled `` escape
+      - name: string.quoted.other.backtick.fun
+        begin: '`'
+        end: '`'
+        beginCaptures:
+          '0': { name: punctuation.definition.string.begin.fun }
+        endCaptures:
+          '0': { name: punctuation.definition.string.end.fun }
+        patterns:
+          - name: constant.character.escape.fun
+            match: '``'
+
+  # Time literal '@...' "@..." @`...` is handled naturally as the lone '@'
+  # variable followed by a quoted string (see #language-variables + #strings).
+
+  numbers:
+    patterns:
+      - name: constant.numeric.fun
+        match: '\b(?:(?:[0-9]+(?:\.[0-9]+)?(?:[eE][-+]?[0-9]+)?)|(?:\.[0-9]+)|(?:0[xX][0-9a-fA-F]+)|(?:0[bB][01]+))\b'
+
+  # true / false / null / nil
+  constants:
+    patterns:
+      - name: constant.language.fun
+        match: '\b(?:true|false|null|nil)\b'
+
+  # this / base / result  (object-system implicit variables) and lone '@'
+  language-variables:
+    patterns:
+      - name: variable.language.fun
+        match: '\b(?:this|base|result)\b'
+      - name: variable.language.fun
+        match: '(?<![\w$@])@(?![\w$@])'
+
+  # Control keywords (from id.inc)
+  keywords:
+    patterns:
+      - name: keyword.control.fun
+        match: '\b(?:and|as|atom|bit|case|class|div|do|else|elsif|end|except|exit|finally|for|fun|if|in|is|loop|mod|new|next|not|or|raise|return|step|then|to|try|use|var|when|while|xor)\b'
+
+  operators:
+    patterns:
+      # Dot-operator form: .<opchars>  (e.g. ?., .#, .x, .foo)
+      - name: keyword.operator.fun
+        match: '\.(?=[~!#%^&*\-+\\|=<>?/])[~!#%^&*\-+\\|=<>?/]*'
+      # Multi-char operators (order matters: longest first)
+      - name: keyword.operator.fun
+        match: '(?:\->|<<|>>|<=|>=|!=|<>|=~|!~|\+=|-=|\*=|&=)'
+      # Single-char operators
+      - name: keyword.operator.fun
+        match: '[-+*/^<>=&|]'
+      # Punctuation
+      - name: punctuation.other.fun
+        match: '[()\[\]{};:,.?]'
+
+  identifiers:
+    patterns:
+      - name: variable.other.fun
+        match: '[$_@A-Za-z][$_@A-Za-z0-9]*'
