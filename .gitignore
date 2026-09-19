@@ -1,0 +1,45 @@
+# ===========================================================================
+# Funide - .gitignore
+# Generated build artifacts and editor files are NOT tracked.
+# Keep source (.pas/.dfm/.dpr/.res/.msg) and docs only.
+# ===========================================================================
+
+# ---- Pascal / Delphi build artifacts ----
+*.dcu
+*.ppu
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+*.map
+*.drc
+*.pdb
+*.stat
+*.or
+*.exe
+*.dll
+
+# Delphi / CodeGear IDE project/editor files
+*.dof
+*.dsk
+*.cfg
+*.local
+*.identcache
+*.projdata
+*.ddp
+
+# Native executable built by the make-*.bat scripts (no extension)
+src/prj/ide/funide
+
+# Backup / temp files
+*.bak
+*.tmp
+*~
+~*.*
+*.~*
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+desktop.ini
