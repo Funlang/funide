@@ -17,9 +17,9 @@ library, regex) is **not** duplicated here; it is compiled from the neighbouring
 
 ## Contents
 
-- [`src/ide/`](src/ide) — the IDE units: the main window (`ide.pas`/`ide.dfm`),
-  the Fun/Regex/FD syntax highlighters (`funsyntax.pas`, `regexsyntax.pas`,
-  `fdsyntax.pas`), the debugger glue (`debug.pas`), and resources.
+- [`src/ide/`](src/ide) — the IDE units: the main window and debugger glue
+  (`ide.pas`/`ide.dfm`), the Fun/Regex/FD syntax highlighters (`funsyntax.pas`,
+  `regexsyntax.pas`, `fdsyntax.pas`), and resources.
 - [`src/prj/ide/`](src/prj/ide) — the Delphi project (`funide.dpr`,
   `funide.res`) and the Windows build scripts.
 - [`syntaxes/fun.tmLanguage.yaml`](syntaxes/fun.tmLanguage.yaml) — the Fun
@@ -56,7 +56,7 @@ link directly against the `fun` sources:
   pcre in '..\..\regex\pcre\pcre.pas'  // the `fun` project
   ```
 
-- `ide.pas` and `debug.pas` use the Fun units by name:
+- `ide.pas` uses the Fun units by name:
 
   ```pascal
   uses fun, base, core, host, parse, pcre, ui, io;

@@ -15,9 +15,9 @@ Fun 语言本体（解释器、解析器、运行时库、正则引擎）在此*
 
 ## 目录内容
 
-- [`src/ide/`](src/ide) —— IDE 单元：主窗口（`ide.pas`/`ide.dfm`）、
-  Fun/Regex/FD 语法高亮（`funsyntax.pas`、`regexsyntax.pas`、`fdsyntax.pas`）、
-  调试器接口（`debug.pas`）及资源文件。
+- [`src/ide/`](src/ide) —— IDE 单元：主窗口与调试器胶合代码
+  （`ide.pas`/`ide.dfm`）、Fun/Regex/FD 语法高亮（`funsyntax.pas`、
+  `regexsyntax.pas`、`fdsyntax.pas`）及资源文件。
 - [`src/prj/ide/`](src/prj/ide) —— Delphi 工程（`funide.dpr`、`funide.res`）
   与 Windows 构建脚本。
 - [`syntaxes/fun.tmLanguage.yaml`](syntaxes/fun.tmLanguage.yaml) —— Fun 的
@@ -52,7 +52,7 @@ funide 不包含 Fun 语言本体。`funide.dpr` 和 `ide.pas` 直接链接 `fun
   pcre in '..\..\regex\pcre\pcre.pas'  // `fun` 项目
   ```
 
-- `ide.pas`、`debug.pas` 按单元名引用 Fun 单元：
+- `ide.pas` 按单元名引用 Fun 单元：
 
   ```pascal
   uses fun, base, core, host, parse, pcre, ui, io;
