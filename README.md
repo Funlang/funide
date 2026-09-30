@@ -5,6 +5,7 @@ The **funide** IDE and editor tooling for the
 
 **English** (this file) · [简体中文](README.zh.md)
 
+- Version: **9.0**
 - Website: <https://funlang.org>
 - License: MIT (see [LICENSE](LICENSE))
 
