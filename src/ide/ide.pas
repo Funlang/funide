@@ -150,6 +150,7 @@ type
     function IsBreakPoint(Line: Integer): Boolean;
     function IsCodeLine(Line: Integer): Boolean;
     procedure Load;
+    procedure ReLoad(const AEncoding: TSynEncoding);
     procedure Save;
     procedure SetSearchHighlights(AList: TList);
     procedure ToggleAllMarks(Mark: Integer);
@@ -951,10 +952,51 @@ begin
   LastTime := GetTime(FileName);
 end;
 
-procedure TfEdit.Save;
+procedure TfEdit.ReLoad(const AEncoding: TSynEncoding);
+const
+  cps: array[TSynEncoding] of fun.word = (65001, 1200, 1201, 0);
+var
+  ob: Boolean;
 begin
-  //Lines.SaveToFile(FileName);
-  SaveToFile(Lines.Text, FileName, Encoding, BOM);
+  Encoding := AEncoding;
+  BOM      := False;
+  // An unsaved buffer has no bytes on disk to re-read; just retarget the
+  // encoding used when it is eventually saved.
+  if FileName = '' then
+  begin
+    Modified := True;
+    exit;
+  end;
+  ob := WordWrap;
+  WordWrap := False;
+  Lines.BeginUpdate;
+  try
+    try
+      Lines.Text := CIO.Load(FileName, cps[AEncoding]);
+    except
+    end;
+    if Lines.Count < 1000 then WordWrap := ob;
+  finally
+    Lines.EndUpdate;
+  end;
+  Modified := False;
+  LastTime := GetTime(FileName);
+end;
+
+procedure TfEdit.Save;
+var
+  lb: UnicodeString;
+begin
+  // Lines.Text always uses sLineBreak (CRLF on Windows), so build the text
+  // with the line break that matches the buffer's file format instead.
+  case TSynEditStringList(Lines).FileFormat of
+    sffUnix:    lb := #10;      // LF
+    sffMac:     lb := #13;      // CR
+    sffUnicode: lb := #$2028;   // LINE SEPARATOR
+  else
+    lb := #13#10;               // CRLF (sffDos)
+  end;
+  SaveToFile(TSynEditStringList(Lines).GetSeparatedText(lb), FileName, Encoding, BOM);
   Modified := False;
   LastTime := GetTime(FileName);
 end;
@@ -2356,21 +2398,38 @@ begin
   ActiveEdit.SearchReplace(s, mmoReplace.Text, Options);
 end;
 
-// Clicking the encoding panel (Panels[3]) switches the encoding used when the
-// file is saved. For now this just toggles between ANSI and UTF-8; the ordinal
-// 0 of TSynEncoding is UTF-8, matching the cps[]/es[] tables in TfEdit.Load and
-// UpdateStatus.
+// Status bar clicks:
+//   Panels[2] (file format) switches CRLF (DOS) <-> LF (UNIX);
+//   Panels[3] (encoding) re-reads the file as ANSI <-> UTF-8.
 procedure TfIDE.statsPanelClick(Sender: TObject; Panel: TStatusPanel);
+const
+  es: array[TSynEncoding] of string = ('UTF-8', 'UCS-2 LE', 'UCS-2 BE', 'ANSI');
+var
+  enc: TSynEncoding;
 begin
-  if (ActiveEdit = nil) or IsRunning or (Panel <> stats.Panels[3]) then exit;
+  if (ActiveEdit = nil) or IsRunning then exit;
   with ActiveEdit do
   begin
-    if Encoding = seAnsi then
-      Encoding := TSynEncoding(0); // UTF-8
+    if Panel = stats.Panels[3] then
+    begin
+      if Encoding = seAnsi then enc := seUTF8 else enc := seAnsi;
+      if (FileName <> '') and Modified then
+        if MessageBox(0, PChar('Reload [' + DisplayName + '] as ' + es[enc] +
+             '?'#13#10'Unsaved changes will be lost.'), 'Confirmation',
+             MB_OKCANCEL or MB_ICONQUESTION) <> IDOK then
+          exit;
+      ReLoad(enc);
+    end
+    else if Panel = stats.Panels[2] then
+    begin
+      if TSynEditStringList(Lines).FileFormat = sffDos then
+        TSynEditStringList(Lines).FileFormat := sffUnix
+      else
+        TSynEditStringList(Lines).FileFormat := sffDos;
+      Modified := True;
+    end
     else
-      Encoding := seAnsi;
-    BOM      := False;
-    Modified := True;
+      exit;
   end;
   UpdateStatus;
 end;
