@@ -404,7 +404,7 @@ type
     procedure FormShow(Sender: TObject);
     procedure mmoFindKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure PresetItemClick(Sender: TObject);
-    procedure statsPanelClick(Sender: TObject; Panel: TStatusPanel);
+    procedure statsClick(Sender: TObject);
   private
     DebugMode: TfDebugMode;
     dlgOptions: TSynEditOptionsDialog;
@@ -2061,7 +2061,7 @@ var
   s: string;
 begin
   Files := TfFiles.create;
-  stats.OnPanelClick := statsPanelClick;
+  stats.OnClick := statsClick;
   DragAcceptFiles(Handle, True);
   LoadLogs;
   if fInis = nil then fInis := TStringList.Create;
@@ -2401,37 +2401,55 @@ end;
 // Status bar clicks:
 //   Panels[2] (file format) switches CRLF (DOS) <-> LF (UNIX);
 //   Panels[3] (encoding) re-reads the file as ANSI <-> UTF-8.
-procedure TfIDE.statsPanelClick(Sender: TObject; Panel: TStatusPanel);
+// TStatusBar here has no OnPanelClick, so the clicked panel is located from
+// the click position via the SB_GETRECT status bar message.
+procedure TfIDE.statsClick(Sender: TObject);
 const
   es: array[TSynEncoding] of string = ('UTF-8', 'UCS-2 LE', 'UCS-2 BE', 'ANSI');
+  SB_GETRECT = $040A; // WM_USER + 10: bounding rect of a status panel
 var
+  pt: TPoint;
+  r: TRect;
+  i: Integer;
   enc: TSynEncoding;
 begin
   if (ActiveEdit = nil) or IsRunning then exit;
-  with ActiveEdit do
-  begin
-    if Panel = stats.Panels[3] then
+  GetCursorPos(pt);
+  pt := stats.ScreenToClient(pt);
+  for i := stats.Panels.Count - 1 downto 0 do
+    if stats.Panels[i].Text <> '' then
     begin
-      if Encoding = seAnsi then enc := seUTF8 else enc := seAnsi;
-      if (FileName <> '') and Modified then
-        if MessageBox(0, PChar('Reload [' + DisplayName + '] as ' + es[enc] +
-             '?'#13#10'Unsaved changes will be lost.'), 'Confirmation',
-             MB_OKCANCEL or MB_ICONQUESTION) <> IDOK then
-          exit;
-      ReLoad(enc);
-    end
-    else if Panel = stats.Panels[2] then
-    begin
-      if TSynEditStringList(Lines).FileFormat = sffDos then
-        TSynEditStringList(Lines).FileFormat := sffUnix
-      else
-        TSynEditStringList(Lines).FileFormat := sffDos;
-      Modified := True;
-    end
-    else
-      exit;
-  end;
-  UpdateStatus;
+      SendMessage(stats.Handle, SB_GETRECT, WPARAM(i), LPARAM(@r));
+      if (pt.X >= r.Left) and (pt.X < r.Right) and
+         (pt.Y >= r.Top)  and (pt.Y < r.Bottom) then
+      begin
+        with ActiveEdit do
+        begin
+          if i = 3 then
+          begin
+            if Encoding = seAnsi then enc := seUTF8 else enc := seAnsi;
+            if (FileName <> '') and Modified then
+              if MessageBox(0, PChar('Reload [' + DisplayName + '] as ' + es[enc] +
+                   '?'#13#10'Unsaved changes will be lost.'), 'Confirmation',
+                   MB_OKCANCEL or MB_ICONQUESTION) <> IDOK then
+                exit;
+            ReLoad(enc);
+          end
+          else if i = 2 then
+          begin
+            if TSynEditStringList(Lines).FileFormat = sffDos then
+              TSynEditStringList(Lines).FileFormat := sffUnix
+            else
+              TSynEditStringList(Lines).FileFormat := sffDos;
+            Modified := True;
+          end
+          else
+            exit;
+        end;
+        UpdateStatus;
+        exit;
+      end;
+    end;
 end;
 
 procedure TfIDE.TreeFocusChange(Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex);
