@@ -830,7 +830,7 @@ begin
       if (aLine mod 5 = 0) then
         aText := '='
       else
-        aText := '¡ð' //25CB
+        aText := WideChar($25CB) //25CB
       ;
     end
     else
@@ -838,7 +838,7 @@ begin
       if (aLine mod 5 = 0) then
         aText := '-'
       else
-        aText := '¡¤' //00B7
+        aText := WideChar($00B7) //00B7
       ;
     end;
   end;
@@ -1057,7 +1057,7 @@ end;
 
 function TfTab.GetTitle: string;
 begin
-  result := StringReplace(Caption, ' ¡Á', '', []);
+  result := StringReplace(Caption, ' ' + WideChar($00D7), '', []);
 end;
 
 procedure TfTab.Load;
@@ -1079,7 +1079,7 @@ end;
 
 procedure TfTab.SetTitle(const Value: string);
 begin
-  Caption := Value + ' ¡Á'; //00D7
+  Caption := Value + ' ' + WideChar($00D7); //00D7
 end;
 
 //==============================================================
@@ -2401,7 +2401,7 @@ begin
     begin
       sLine := TrimRight(data.Edit.Lines[data.Index - 1]);
       if Length(sLine) > 80 then
-        sLine := Copy(sLine, 1, 80) + '¡­';
+        sLine := Copy(sLine, 1, 80) + WideChar($2026);
       CellText := Format('%s - %d', [sLine, data.Index]);
     end
     else
