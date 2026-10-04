@@ -124,12 +124,15 @@ type
     fFdSyntax: TSynCustomHighlighter;
     FFileName: string;
     fFunSyntax: TSynCustomHighlighter;
+    FBracketLine1: Integer;
+    FBracketLine2: Integer;
     FImageList: TImageList;
     FPrevCaretY: Integer;
     FSearchBookmarkLines: TList;
     FSearchHighlights: TList;
     fStates: ArrayOfByte;
     procedure EditorPaintTransient(Sender: TObject; Canvas: TCanvas; TransientType: TTransientType);
+    function BracketMatch(out Match: TBufferCoord): Boolean;
     procedure GutterClick(Sender: TObject; Button: TMouseButton; X, Y, Line: Integer; Mark: TSynEditMark);
     procedure GutterGetText(Sender: TObject; aLine: Integer; var aText: UnicodeString);
     procedure GutterPaint(Sender: TObject; aLine: Integer; X, Y: Integer);
@@ -663,6 +666,8 @@ begin
   Encoding          := seAnsi;
   BOM               := False;
   FPrevCaretY := CaretY;
+  FBracketLine1 := 0;
+  FBracketLine2 := 0;
   OnStatusChange := StatusChange;
   
   ShowHint          := False;
@@ -780,16 +785,47 @@ procedure TfEdit.EditorPaintTransient(Sender: TObject; Canvas: TCanvas; Transien
       revPts[i] := pts[3 - i];
     Canvas.PolyBezier(revPts);
   end;
-  
+
+  procedure DrawBracketBox(const p: TBufferCoord);
+  var
+    pt: TPoint;
+  begin
+    pt := RowColumnToPixels(BufferToDisplayPos(p));
+    Canvas.Rectangle(pt.X, pt.Y, pt.X + CharWidth - 1, pt.Y + LineHeight - 1);
+  end;
+
   var
     i: Integer;
     pRange: PHighLightRange;
     ptStart, ptEnd: TPoint;
     dispStart, dispEnd: TDisplayCoord;
     lineHeight: Integer;
-  
+    match: TBufferCoord;
+
 begin
   if TransientType <> ttAfter then Exit;
+
+  // Bracket feedback: box the bracket under the caret and its partner (blue),
+  // or just the unmatched caret bracket (red). Independent of search marks.
+  if BracketMatch(match) then
+  begin
+    Canvas.Pen.Width := 1;
+    Canvas.Pen.Style := psSolid;
+    Canvas.Brush.Style := bsClear;
+    if match.Line > 0 then
+    begin
+      Canvas.Pen.Color := clBlue;
+      DrawBracketBox(CaretXY);
+      DrawBracketBox(match);
+    end
+    else
+    begin
+      Canvas.Pen.Color := clRed;
+      DrawBracketBox(CaretXY);
+    end;
+    Canvas.Brush.Style := bsSolid;
+  end;
+
   if FSearchHighlights.Count = 0 then Exit;
   
   lineHeight := Self.LineHeight;
@@ -1032,7 +1068,26 @@ begin
 end;
 
 procedure TfEdit.StatusChange(Sender: TObject; Changes: TSynStatusChanges);
+var
+  Match: TBufferCoord;
 begin
+  if (scCaretX in Changes) or (scCaretY in Changes) then
+  begin
+    // Erase the previous bracket boxes (the match may sit on another line),
+    // then remember the new ones so the next caret move can erase these too.
+    if FBracketLine1 > 0 then InvalidateLine(FBracketLine1);
+    if FBracketLine2 > 0 then InvalidateLine(FBracketLine2);
+    FBracketLine1 := 0;
+    FBracketLine2 := 0;
+    if BracketMatch(Match) then
+    begin
+      FBracketLine1 := CaretY;
+      FBracketLine2 := Match.Line; // 0 when the bracket is unmatched
+    end;
+    if FBracketLine1 > 0 then InvalidateLine(FBracketLine1);
+    if FBracketLine2 > 0 then InvalidateLine(FBracketLine2);
+  end;
+
   if scCaretY in Changes then
   begin
     if FPrevCaretY <> CaretY then
@@ -1042,6 +1097,26 @@ begin
       FPrevCaretY := CaretY;
     end;
   end;
+end;
+
+// True when the caret sits on one of ()[]{}; Match receives the paired
+// bracket position (Char/Line = 0 when unmatched). Comment/string contents are
+// skipped by SynEdit's own GetMatchingBracketEx, so it needs no extra logic.
+function TfEdit.BracketMatch(out Match: TBufferCoord): Boolean;
+var
+  s: UnicodeString;
+  ch: WideChar;
+begin
+  Match.Char := 0;
+  Match.Line := 0;
+  Result := False;
+  if (CaretY < 1) or (CaretY > Lines.Count) then Exit;
+  s := Lines[CaretY - 1];
+  if (CaretX < 1) or (CaretX > Length(s)) then Exit;
+  ch := s[CaretX];
+  if not (ch in ['(', ')', '[', ']', '{', '}']) then Exit;
+  Result := True;
+  Match := GetMatchingBracketEx(CaretXY);
 end;
 
 procedure TfEdit.ToggleAllMarks(Mark: Integer);
