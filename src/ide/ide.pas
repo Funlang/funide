@@ -403,6 +403,7 @@ type
     procedure FormShow(Sender: TObject);
     procedure mmoFindKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure PresetItemClick(Sender: TObject);
+    procedure statsPanelClick(Sender: TObject; Panel: TStatusPanel);
   private
     DebugMode: TfDebugMode;
     dlgOptions: TSynEditOptionsDialog;
@@ -2018,6 +2019,7 @@ var
   s: string;
 begin
   Files := TfFiles.create;
+  stats.OnPanelClick := statsPanelClick;
   DragAcceptFiles(Handle, True);
   LoadLogs;
   if fInis = nil then fInis := TStringList.Create;
@@ -2352,6 +2354,25 @@ begin
   if not aFindRegex.checked then s := '\Q' + s + '\E';
   if aFindWholeWord.checked then s := '\b' + s + '\b';
   ActiveEdit.SearchReplace(s, mmoReplace.Text, Options);
+end;
+
+// Clicking the encoding panel (Panels[3]) switches the encoding used when the
+// file is saved. For now this just toggles between ANSI and UTF-8; the ordinal
+// 0 of TSynEncoding is UTF-8, matching the cps[]/es[] tables in TfEdit.Load and
+// UpdateStatus.
+procedure TfIDE.statsPanelClick(Sender: TObject; Panel: TStatusPanel);
+begin
+  if (ActiveEdit = nil) or IsRunning or (Panel <> stats.Panels[3]) then exit;
+  with ActiveEdit do
+  begin
+    if Encoding = seAnsi then
+      Encoding := TSynEncoding(0); // UTF-8
+    else
+      Encoding := seAnsi;
+    BOM      := False;
+    Modified := True;
+  end;
+  UpdateStatus;
 end;
 
 procedure TfIDE.TreeFocusChange(Sender: TBaseVirtualTree; Node: PVirtualNode; Column: TColumnIndex);
