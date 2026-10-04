@@ -421,7 +421,7 @@ type
     procedure ClearTree(node: PVirtualNode; mark: Integer = 0);
     procedure DoClearAll(mark: Integer);
     procedure DropFiles(Sender: TObject; X, Y: Integer; Files: TUnicodeStrings);
-    function Eval(const id: fun.str): fun.str;
+    function EvalExpr(const s: string): string;
     procedure Evaluate;
     function GetSearchOptions(so: TSynSearchOptions = []): TSynSearchOptions;
     function IniFile: string;
@@ -1859,11 +1859,11 @@ end;
 
 function TfIDE.DoDebugCmd(const s: string): string;
 begin
-  result := s; // todo
+  result := s;
   delete(result, 1, 1);
   result := trim(result);
   try
-    result := Eval(result);
+    result := EvalExpr(result);
   except
     result := result + _NotFound;
   end;
@@ -1938,20 +1938,30 @@ begin
   end;
 end;
 
-function TfIDE.Eval(const id: fun.str): fun.str;
+function TfIDE.EvalExpr(const s: string): string;
 var
+  tree: CRun;
+  e: CExp;
   v: CValue;
-  e: CVar;
 begin
-  e := _env.lastNode.uid(id);
-  if e.asObj is CSet then
-  begin
-    _env.call(e, '@toJson', nil, @v);
-    Result := fun.str(v);
-  end
-  else
-    Result := e.asStr
-  ;
+  Result := s + _NotFound;
+  if (_ENV = nil) or (_ENV.lastNode = nil) then exit;
+  tree := nil;
+  e := CParser.ParseExp(s, _ENV.lastNode, tree);
+  try
+    if e = nil then exit;
+    e.calcValue(_ENV);
+    if e.asObj is CSet then
+    begin
+      _ENV.call(e, '@toJson', nil, @v);
+      Result := fun.str(v);
+    end
+    else
+      Result := e.asStr
+    ;
+  finally
+    if tree <> nil then FreeAndNil(tree);
+  end;
 end;
 
 procedure TfIDE.Evaluate;
@@ -1962,10 +1972,11 @@ begin
   if isRunning and isBreaked then
   with ActiveEdit do
   begin
-    lastWord := WordAtMouse;
+    lastWord := SysUtils.Trim(SelText);
+    if lastWord = '' then lastWord := WordAtMouse;
     if lastWord <> '' then
     try
-      Hint := lastWord + ' = ' + Eval(lastWord);
+      Hint := lastWord + ' = ' + EvalExpr(lastWord);
       GetCursorPos(P);
   
     {$IfDef NewHint}
