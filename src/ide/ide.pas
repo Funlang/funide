@@ -1931,7 +1931,8 @@ end;
 
 function TfIDE.IsRunToRune(n: CRune): Boolean;
 begin
-  Result := (fRunToEdit <> nil) and (n.row = fRunToLine) and Files.isBreakPoint(n);
+  Result := (fRunToEdit <> nil) and (n.row = fRunToLine) and Files.isBreakPoint(n)
+        and (n.root is CModu) and SameText(CModu(n.root).fileName, fRunToEdit.FileName);
 end;
 
 procedure TfIDE.aSaveAsExecute(Sender: TObject);
