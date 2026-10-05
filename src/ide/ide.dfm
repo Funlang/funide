@@ -2104,6 +2104,22 @@ object fIDE: TfIDE
       ShortCut = 122
       OnExecute = aRunOutExecute
     end
+    object aRunToCursor: TAction
+      Category = 'Debug'
+      Caption = 'Run to Cursor'
+      Hint = 'Run to Cursor (Ctrl+F10)'
+      ImageIndex = 30
+      ShortCut = 16505
+      OnExecute = aRunToCursorExecute
+    end
+    object aForceRunToCursor: TAction
+      Category = 'Debug'
+      Caption = 'Force Run to Cursor'
+      Hint = 'Force Run to Cursor (Ctrl+Shift+F10)'
+      ImageIndex = 30
+      ShortCut = 24697
+      OnExecute = aForceRunToCursorExecute
+    end
     object aRunUni: TAction
       Category = 'Debug'
       Caption = 'Run Unicode'
@@ -2280,6 +2296,17 @@ object fIDE: TfIDE
   object pmRun: TPopupMenu
     Left = 250
     Top = 270
+    object miRunToCursor: TMenuItem
+      Action = aRunToCursor
+      SubMenuImages = il1
+    end
+    object miForceRunToCursor: TMenuItem
+      Action = aForceRunToCursor
+      SubMenuImages = il1
+    end
+    object miRunSep: TMenuItem
+      Caption = '-'
+    end
     object miRunOut: TMenuItem
       Action = aRunOut
       SubMenuImages = il1

@@ -264,8 +264,10 @@ type
     aReplaceAll: TAction;
     aRun: TAction;
     aRunOut: TAction;
+    aRunToCursor: TAction;
     aRunUni: TAction;
     aRunUniCN: TAction;
+    aForceRunToCursor: TAction;
     aSave: TAction;
     aSaveAs: TAction;
     aSpecChar: TAction;
@@ -391,6 +393,8 @@ type
     procedure aReplaceExecute(Sender: TObject);
     procedure aRunExecute(Sender: TObject);
     procedure aRunOutExecute(Sender: TObject);
+    procedure aRunToCursorExecute(Sender: TObject);
+    procedure aForceRunToCursorExecute(Sender: TObject);
     procedure aRunUniCNExecute(Sender: TObject);
     procedure aRunUniExecute(Sender: TObject);
     procedure aSaveAsExecute(Sender: TObject);
@@ -422,6 +426,15 @@ type
     root: CRun;
     vtNodes: TfTree;
     procedure AddLog(const f: string);
+    // T2: Run to Cursor uses a temporary breakpoint at the caret line
+    fRunToEdit: TfEdit;        // edit holding the temporary breakpoint
+    fRunToLine: Integer;       // its 1-based line (0 = inactive)
+    fRunToPrev: Byte;          // mark that line had before we touched it
+    fRunToForce: Boolean;      // ignore other breakpoints (Force variant)
+    procedure DoRunToCursor(Force: Boolean);
+    procedure ClearRunToCursor;   // hit: drop the temp breakpoint, keep running
+    procedure FinishRunToCursor;  // run over: drop it and restore the old mark
+    function IsRunToRune(n: CRune): Boolean;
     // T3: clickable output lines
     function LastErrorPos: string;
     function LocFromOutputLine(const line: string; out fn: string; out row: Integer): Boolean;
@@ -588,7 +601,12 @@ begin
   begin
     if not IsRunning then raise Exception.create('[Stopped]');
   
-    if Files.isBreakPoint(CRune(n)) then IsBreaked := true
+    if IsRunToRune(CRune(n)) then
+    begin
+      ClearRunToCursor; // reached the caret line: no dot left behind
+      IsBreaked := true;
+    end
+    else if (not fRunToForce) and Files.isBreakPoint(CRune(n)) then IsBreaked := true
     else if DebugMode = dmInto      then IsBreaked := true;
   
     if IsBreaked then
@@ -1844,6 +1862,78 @@ begin
   //ShellExecute(0, 'OpenU', PChar(ActiveEdit.FileName), nil, nil, 1);
 end;
 
+// T2: run until the caret line. We mark that line as a breakpoint just for
+// this run (so the gutter shows where it will stop), then clear it when the
+// line is reached, and restore the original mark when the run is over.
+// Force ignores every other breakpoint, so only the caret line can stop it.
+procedure TfIDE.DoRunToCursor(Force: Boolean);
+var
+  e: TfEdit;
+  line: Integer;
+begin
+  if IsRunning and not IsBreaked then exit; // a free-running script can't be redirected
+
+  e := ActiveEdit;
+  if e = nil then exit;
+  line := e.CaretY;
+  if (line < 1) or (line > e.Lines.Count) then exit;
+
+  // The caret already sits on a real breakpoint: plain Run stops there anyway.
+  if (not Force) and (line <= High(e.fStates)) and (e.fStates[line] = ImgBreakPoint) then
+  begin
+    aRunExecute(nil);
+    exit;
+  end;
+
+  if Length(e.fStates) <= line then SetLength(e.fStates, line + 2);
+  fRunToEdit := e;
+  fRunToLine := line;
+  fRunToPrev := e.fStates[line];
+  fRunToForce := Force;
+  e.fStates[line] := ImgBreakPoint;
+  e.InvalidateGutterLine(line);
+
+  DebugMode := dmGo;
+  IsBreaked := False;
+  if not IsRunning then DoRun; // otherwise just continue the paused run
+end;
+
+procedure TfIDE.aRunToCursorExecute(Sender: TObject);
+begin
+  DoRunToCursor(False);
+end;
+
+procedure TfIDE.aForceRunToCursorExecute(Sender: TObject);
+begin
+  DoRunToCursor(True);
+end;
+
+// The caret line was reached: drop the temporary breakpoint now so the gutter
+// loses the dot and a later Step/Run does not stop there again.
+procedure TfIDE.ClearRunToCursor;
+begin
+  if fRunToEdit = nil then exit;
+  if (fRunToLine > 0) and (fRunToLine <= High(fRunToEdit.fStates)) then
+  begin
+    fRunToEdit.fStates[fRunToLine] := fRunToPrev;
+    fRunToEdit.InvalidateGutterLine(fRunToLine);
+  end;
+  fRunToEdit := nil;
+  fRunToLine := 0;
+  fRunToForce := False;
+end;
+
+// The run ended without ever hitting the caret line: undo our temporary mark.
+procedure TfIDE.FinishRunToCursor;
+begin
+  ClearRunToCursor;
+end;
+
+function TfIDE.IsRunToRune(n: CRune): Boolean;
+begin
+  Result := (fRunToEdit <> nil) and (n.row = fRunToLine) and Files.isBreakPoint(n);
+end;
+
 procedure TfIDE.aSaveAsExecute(Sender: TObject);
 begin
   with dlgSave do
@@ -2009,7 +2099,11 @@ begin
     exit;
   end;
   
-  if ActiveEdit.Lines.Text = '' then exit;
+  if ActiveEdit.Lines.Text = '' then
+  begin
+    FinishRunToCursor;
+    exit;
+  end;
   try
     FreeAndNil(root);
     FreeAndNil(_ENV);
@@ -2036,6 +2130,7 @@ begin
     end;
   end;
   IsRunning := false;
+  FinishRunToCursor; // run over (finished or stopped): drop any temp breakpoint
   DebugMode := dmGo;
   //ActiveEdit.InvalidateGutter;
   ActiveEdit.Invalidate;
@@ -2748,6 +2843,13 @@ end;
 
 procedure TfIDE.RemFile(const fn: string);
 begin
+  // The edit holding a pending temporary breakpoint is about to die.
+  if (fRunToEdit <> nil) and SameText(fRunToEdit.DisplayName, fn) then
+  begin
+    fRunToEdit := nil;
+    fRunToLine := 0;
+    fRunToForce := False;
+  end;
   Files.add(fn, nil, true);
   RefreshTree;
 end;
@@ -2967,6 +3069,8 @@ begin
       aUndo.Enabled     := b;
       aRedo.Enabled     := b;
       aRun.Enabled        := b;
+      aRunToCursor.Enabled := b;
+      aForceRunToCursor.Enabled := b;
       aPause.Enabled      := b;
       aStop.Enabled       := b;
       aStepOver.Enabled   := b;
@@ -3022,6 +3126,8 @@ begin
     aRedo.Enabled     := CanRedo;
   
     aRun.Enabled      := not IsRunning or IsRunning and IsBreaked;
+    aRunToCursor.Enabled := aRun.Enabled;
+    aForceRunToCursor.Enabled := aRun.Enabled;
     aPause.Enabled    := IsRunning and not IsBreaked;
     aStop.Enabled     := IsRunning;
     aStepOver.Enabled := aRun.Enabled;
