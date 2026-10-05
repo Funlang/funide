@@ -21,7 +21,7 @@ set "INCPATH=%SYNCEDIT%;%FUN_ROOT%\src\ide;%FUN_ROOT%\src\prj\ide"
 
 echo [funide] building with "%DCC%"
 pushd "%PRJ%"
-"%DCC%" funide -B -Q -GD -$D+ -D_B_;_C_;CalcOpt;WinAPI;WinCOM;Regex;FunUI;MD5;IDE;xUNICODE_CTRLS;NewHintX -U"%UNITPATH%" -I"%INCPATH%" -E"%OUTDIR%" %*
+"%DCC%" funide -B -Q -GD -$D+ -D_B_;_C_;CalcOpt;WinAPI;WinCOM;Regex;FunUI;MD5;IDE;xUNICODE_CTRLS;NewHintX;FunTraceback -U"%UNITPATH%" -I"%INCPATH%" -E"%OUTDIR%" %*
 set "RC=%ERRORLEVEL%"
 popd
 if not "%RC%"=="0" echo [funide] build failed with exit code %RC%

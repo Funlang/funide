@@ -422,6 +422,19 @@ type
     root: CRun;
     vtNodes: TfTree;
     procedure AddLog(const f: string);
+    // T3: clickable output lines
+    function LastErrorPos: string;
+    function LocFromOutputLine(const line: string; out fn: string; out row: Integer): Boolean;
+    procedure mmoReplaceDblClick(Sender: TObject);
+    procedure ShowStatus(const s: string);
+    // T5: jump to the file named by a `use '<file>'` string literal
+    procedure EditKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure EditMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    function UseStringAtCaret(out s: string): Boolean;
+    function ResolveUseFile(const f: string): string;
+    function GotoUseAtCaret: Boolean;
+    // T6: `>stack` command line
+    function StackText: string;
     function CheckExists(const f: string): Boolean;
     procedure ClearTree(node: PVirtualNode; mark: Integer = 0);
     procedure DoClearAll(mark: Integer);
@@ -2015,7 +2028,7 @@ begin
     on e: exception do
     begin
       try
-        Output(CdRunner(_ENV).ret + e.Message, 64*1024);
+        Output(CdRunner(_ENV).ret + LastErrorPos + e.Message, 64*1024);
       except
         Output(e.Message);
       end;
@@ -2137,6 +2150,7 @@ var
 begin
   Files := TfFiles.create;
   stats.OnClick := statsClick;
+  mmoReplace.OnDblClick := mmoReplaceDblClick; // T3: jump on double click
   DragAcceptFiles(Handle, True);
   LoadLogs;
   if fInis = nil then fInis := TStringList.Create;
@@ -2358,13 +2372,15 @@ begin
           if s[1] = '?' then
           begin
             if s = '?' then
-              s := 'Command: ? cls'
+              s := 'Command: ? cls stack'
             else
               s := DoDebugCmd(s)
             ;
           end
           else if s = 'cls' then
             s := ''
+          else if s = 'stack' then
+            s := StackText
           else
             exit
           ;
@@ -2376,6 +2392,225 @@ begin
       end;
     end;
   end;
+end;
+
+// T3: show a transient message in the spare status panel (not overwritten by
+// UpdateStatus, which only refreshes panels 0..3).
+procedure TfIDE.ShowStatus(const s: string);
+begin
+  if stats.Panels.Count > 4 then stats.Panels[4].Text := ' ' + s;
+end;
+
+// T5: is the caret inside a string literal that directly follows `use`?
+// (WordAtCursor/GetWordAtCursor exclude quotes, so scan the line instead.)
+function TfIDE.UseStringAtCaret(out s: string): Boolean;
+var
+  line, prefix: string;
+  i, n, p, b, k: Integer;
+  q: Char;
+begin
+  result := false;
+  s := '';
+  if ActiveEdit = nil then exit;
+  if (ActiveEdit.CaretY < 1) or (ActiveEdit.CaretY > ActiveEdit.Lines.Count) then exit;
+  line := ActiveEdit.Lines[ActiveEdit.CaretY - 1];
+  n := Length(line);
+  p := ActiveEdit.CaretX;
+  i := 1;
+  while i <= n do
+  begin
+    if (line[i] = '''') or (line[i] = '"') then
+    begin
+      q := line[i];
+      b := i + 1;
+      while (b <= n) and (line[b] <> q) do Inc(b);
+      if (p >= i) and (p <= b) then // caret inside (or on) the quotes
+      begin
+        prefix := Trim(Copy(line, 1, i - 1));
+        k := Length(prefix);
+        while (k > 0) and (prefix[k] <> ' ') and (prefix[k] <> #9) do Dec(k);
+        if SameText(Copy(prefix, k + 1, MaxInt), 'use') then
+        begin
+          s := Copy(line, i + 1, b - i - 1);
+          result := true;
+        end;
+        exit;
+      end;
+      i := b + 1;
+    end
+    else
+      Inc(i);
+  end;
+end;
+
+function TfIDE.ResolveUseFile(const f: string): string;
+var
+  i: Integer;
+  cand: array[0..3] of string;
+begin
+  result := '';
+  if f = '' then exit;
+  cand[0] := ExtractFilePath(ActiveEdit.FileName) + f; // next to the current file
+  cand[1] := ExtractFilePath(ParamStr(0)) + f;         // exe directory
+  cand[2] := ExtractFilePath(ParamStr(0)) + 'lib\' + f;// exe\lib
+  cand[3] := f;                                        // as given / cwd
+  for i := 0 to High(cand) do
+    if (cand[i] <> '') and FileExists(cand[i]) then
+    begin
+      result := cand[i];
+      exit;
+    end;
+end;
+
+function TfIDE.GotoUseAtCaret: Boolean;
+var
+  s, fn: string;
+begin
+  result := false;
+  if (ActiveEdit = nil) or IsRunning then exit;
+  if not UseStringAtCaret(s) then exit;
+  fn := ResolveUseFile(s);
+  if fn = '' then
+  begin
+    ShowStatus('File not found: ' + s);
+    exit;
+  end;
+  OpenTab(fn);
+  result := true;
+end;
+
+procedure TfIDE.EditKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if (Key = VK_RETURN) and (ssCtrl in Shift) and GotoUseAtCaret then
+    Key := 0;
+end;
+
+procedure TfIDE.EditMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+begin
+  if (Button = mbLeft) and (ssCtrl in Shift) then
+    GotoUseAtCaret;
+end;
+
+// T6: `>stack`. With -dFunTraceback the runtime already keeps a real dynamic
+// call chain, and traceBack returns it as clickable `  in name() (file:line)`
+// lines. Without the define, fall back to lastErrorFun plus the last traced
+// node, and say so.
+function TfIDE.StackText: string;
+var
+  t: string;
+  n: CNode;
+  m: CModu;
+begin
+  if _ENV = nil then
+  begin
+    result := '(stack: no environment; not running)';
+    exit;
+  end;
+  t := _ENV.traceBack;
+  if t <> '' then
+  begin
+    result := t;
+    exit;
+  end;
+  result := '(stack: call chain unavailable; best-effort)' + sLineBreak;
+  t := _ENV.lastErrorFun;
+  if t <> '' then result := result + ' in ' + t + sLineBreak;
+  n := _ENV.lastNode;
+  if n is CRune then
+  begin
+    if n.root is CModu then m := CModu(n.root) else m := nil;
+    if (m <> nil) and (m.fileName <> '') then
+      result := result + ' at ' + m.fileName + ':' + IntToStr(CRune(n).row) + sLineBreak
+    else
+      result := result + ' at line ' + IntToStr(CRune(n).row) + sLineBreak;
+  end;
+end;
+
+// T3: `file:line: ` prefix for a runtime error, from the failed node. Mirrors
+// the command-line driver's ErrPos (fun/src/prj/fun/funcmd.dpr).
+function TfIDE.LastErrorPos: string;
+var
+  n: CNode;
+  m: CModu;
+begin
+  result := '';
+  if _ENV = nil then exit;
+  n := _ENV.lastNode;
+  if not (n is CRune) then exit;
+  if n.root is CModu then m := CModu(n.root) else m := nil;
+  if (m <> nil) and (m.fileName <> '') then
+    result := m.fileName + ':' + IntToStr(CRune(n).row) + ': ';
+end;
+
+// T3: match a jump target on an output line. Two forms are recognised:
+//   "<msg> @ <row>,<col>"            (parse error; no file -> caller uses active)
+//   "<file>:<line>" / "(<file>:<line>)" (runtime prefix and traceBack frames)
+function TfIDE.LocFromOutputLine(const line: string; out fn: string; out row: Integer): Boolean;
+var
+  i, j, k, e, n: Integer;
+  s: string;
+begin
+  result := false;
+  fn := '';
+  row := 0;
+  n := Length(line);
+  i := Pos(' @ ', line);
+  if i > 0 then
+  begin
+    j := i + 3;
+    k := j;
+    while (k <= n) and (line[k] in ['0'..'9']) do Inc(k);
+    if k > j then
+    begin
+      row := StrToInt(Copy(line, j, k - j));
+      result := true;
+      exit;
+    end;
+  end;
+  for i := n downto 1 do
+    if line[i] = ':' then
+    begin
+      j := i + 1;
+      k := j;
+      while (k <= n) and (line[k] in ['0'..'9']) do Inc(k);
+      if k > j then
+      begin
+        e := k;
+        s := Trim(Copy(line, 1, i - 1));
+        k := LastDelimiter('()', s);
+        if k > 0 then s := Copy(s, k + 1, MaxInt);
+        s := Trim(s);
+        if (s <> '') and (Pos('.', s) > 0) then
+        begin
+          fn  := s;
+          row := StrToInt(Copy(line, i + 1, e - i - 1));
+          result := true;
+          exit;
+        end;
+      end;
+    end;
+end;
+
+procedure TfIDE.mmoReplaceDblClick(Sender: TObject);
+var
+  fn: string;
+  row: Integer;
+begin
+  if (mmoReplace.CaretPos.Y < 0) or (mmoReplace.CaretPos.Y >= mmoReplace.Lines.Count) then exit;
+  if not LocFromOutputLine(mmoReplace.Lines[mmoReplace.CaretPos.Y], fn, row) then exit;
+  if fn = '' then
+  begin
+    if ActiveEdit = nil then exit;
+    fn := ActiveEdit.FileName; // parse errors carry no file name
+  end;
+  if (fn <> '') and FileExists(fn) then
+  begin
+    OpenTab(fn);
+    ActiveEdit.GotoLineAndCenter(row);
+    ActiveEdit.EnsureCursorPosVisible;
+  end
+  else
+    ShowStatus('File not found: ' + fn);
 end;
 
 procedure TfIDE.NewTab;
@@ -2390,6 +2625,8 @@ begin
   
   t.fEdit.OnDropFiles := DropFiles;
   t.fEdit.PopupMenu   := pmEdit;
+  t.fEdit.OnKeyDown   := EditKeyDown;   // T5: Ctrl+Enter on use '...'
+  t.fEdit.OnMouseDown := EditMouseDown; // T5: Ctrl+Click on use '...'
   t.fEdit.WordWrap    := aWordWrap.Checked;
   t.fEdit.ImageList   := il1;
   t.fEdit.SetFocus;
