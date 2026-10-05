@@ -2446,14 +2446,15 @@ end;
 function TfIDE.ResolveUseFile(const f: string): string;
 var
   i: Integer;
-  cand: array[0..3] of string;
+  cand: array[0..4] of string;
 begin
   result := '';
   if f = '' then exit;
   cand[0] := ExtractFilePath(ActiveEdit.FileName) + f; // next to the current file
   cand[1] := ExtractFilePath(ParamStr(0)) + f;         // exe directory
   cand[2] := ExtractFilePath(ParamStr(0)) + 'lib\' + f;// exe\lib
-  cand[3] := f;                                        // as given / cwd
+  cand[3] := ExtractFilePath(ParamStr(0)) + 'app\' + f;// exe\app (core parity)
+  cand[4] := f;                                        // as given / cwd
   for i := 0 to High(cand) do
     if (cand[i] <> '') and FileExists(cand[i]) then
     begin
@@ -2542,18 +2543,39 @@ begin
     result := m.fileName + ':' + IntToStr(CRune(n).row) + ': ';
 end;
 
-// T3: match a jump target on an output line. Two forms are recognised:
-//   "<msg> @ <row>,<col>"            (parse error; no file -> caller uses active)
+// T3: match a jump target on an output line. Three forms are recognised:
+//   "<msg> @ <row>,<col>"   (parse error; no file -> caller uses active file)
+//   "<file>(<line>)"        (fun-style location)
 //   "<file>:<line>" / "(<file>:<line>)" (runtime prefix and traceBack frames)
 function TfIDE.LocFromOutputLine(const line: string; out fn: string; out row: Integer): Boolean;
 var
-  i, j, k, e, n: Integer;
-  s: string;
+  i, j, k, n: Integer;
+
+  function Clean(const v: string): string;
+  var
+    p: Integer;
+  begin
+    result := Trim(v);
+    p := LastDelimiter('()', result);
+    if p > 0 then result := Trim(Copy(result, p + 1, MaxInt));
+  end;
+
+  function Accept(const v: string; arow: Integer): Boolean;
+  begin
+    result := (v <> '') and (Pos('.', v) > 0);
+    if result then
+    begin
+      fn  := v;
+      row := arow;
+    end;
+  end;
+
 begin
   result := false;
   fn := '';
   row := 0;
   n := Length(line);
+  // parse-error form "<msg> @ <row>,<col>" (no file name)
   i := Pos(' @ ', line);
   if i > 0 then
   begin
@@ -2567,6 +2589,21 @@ begin
       exit;
     end;
   end;
+  // "file(line)"
+  for i := 1 to n do
+    if line[i] = '(' then
+    begin
+      j := i + 1;
+      k := j;
+      while (k <= n) and (line[k] in ['0'..'9']) do Inc(k);
+      if (k > j) and (k <= n) and (line[k] = ')') then
+        if Accept(Clean(Copy(line, 1, i - 1)), StrToInt(Copy(line, i + 1, k - i - 1))) then
+        begin
+          result := true;
+          exit;
+        end;
+    end;
+  // "file:line"
   for i := n downto 1 do
     if line[i] = ':' then
     begin
@@ -2574,20 +2611,11 @@ begin
       k := j;
       while (k <= n) and (line[k] in ['0'..'9']) do Inc(k);
       if k > j then
-      begin
-        e := k;
-        s := Trim(Copy(line, 1, i - 1));
-        k := LastDelimiter('()', s);
-        if k > 0 then s := Copy(s, k + 1, MaxInt);
-        s := Trim(s);
-        if (s <> '') and (Pos('.', s) > 0) then
+        if Accept(Clean(Copy(line, 1, i - 1)), StrToInt(Copy(line, i + 1, k - i - 1))) then
         begin
-          fn  := s;
-          row := StrToInt(Copy(line, i + 1, e - i - 1));
           result := true;
           exit;
         end;
-      end;
     end;
 end;
 
