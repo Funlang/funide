@@ -425,12 +425,12 @@ type
     lastWord: fun.str;
     root: CRun;
     vtNodes: TfTree;
-    procedure AddLog(const f: string);
     // T2: Run to Cursor uses a temporary breakpoint at the caret line
     fRunToEdit: TfEdit;        // edit holding the temporary breakpoint
     fRunToLine: Integer;       // its 1-based line (0 = inactive)
     fRunToPrev: Byte;          // mark that line had before we touched it
     fRunToForce: Boolean;      // ignore other breakpoints (Force variant)
+    procedure AddLog(const f: string);
     procedure DoRunToCursor(Force: Boolean);
     procedure ClearRunToCursor;   // hit: drop the temp breakpoint, keep running
     procedure FinishRunToCursor;  // run over: drop it and restore the old mark
