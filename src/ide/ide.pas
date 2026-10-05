@@ -430,6 +430,7 @@ type
     // T5: jump to the file named by a `use '<file>'` string literal
     procedure EditKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure EditMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure WMGotoUse(var msg: TMessage); message WM_USER + 200; // deferred Ctrl+Click jump
     function UseStringAtCaret(out s: string): Boolean;
     function ResolveUseFile(const f: string): string;
     function GotoUseAtCaret: Boolean;
@@ -2488,8 +2489,16 @@ end;
 
 procedure TfIDE.EditMouseDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
 begin
+  // OpenTab/SetFocus cannot run while the editor is handling a mouse-down on a
+  // control whose tab is about to change ("Cannot focus a disabled or
+  // invisible window"), so defer the jump to the next message-loop pass.
   if (Button = mbLeft) and (ssCtrl in Shift) then
-    GotoUseAtCaret;
+    PostMessage(Handle, WM_USER + 200, 0, 0);
+end;
+
+procedure TfIDE.WMGotoUse(var msg: TMessage);
+begin
+  GotoUseAtCaret;
 end;
 
 // T6: `>stack`. With -dFunTraceback the runtime already keeps a real dynamic
@@ -2553,11 +2562,29 @@ var
 
   function Clean(const v: string): string;
   var
-    p: Integer;
+    p, q: Integer;
+    t: string;
   begin
-    result := Trim(v);
-    p := LastDelimiter('()', result);
-    if p > 0 then result := Trim(Copy(result, p + 1, MaxInt));
+    t := Trim(v);
+    // cut to a Windows drive root (<letter>:\ or <letter>:/) if present, so a
+    // leading word such as "at"/"in" in the message text is dropped
+    for p := Length(t) downto 3 do
+      if (t[p] in ['\', '/']) and (t[p-1] = ':') and (t[p-2] in ['A'..'Z', 'a'..'z']) then
+      begin
+        result := Trim(Copy(t, p - 2, MaxInt));
+        exit;
+      end;
+    // otherwise drop any leading "where:" text up to the last '(' or ')'
+    q := LastDelimiter('()', t);
+    if q > 0 then t := Trim(Copy(t, q + 1, MaxInt));
+    // and if a leading word remains (e.g. "at"), keep the last whitespace token
+    if Pos(' ', t) > 0 then
+    begin
+      q := Length(t);
+      while (q > 0) and (t[q] <> ' ') and (t[q] <> #9) do Dec(q);
+      t := Trim(Copy(t, q + 1, MaxInt));
+    end;
+    result := t;
   end;
 
   function Accept(const v: string; arow: Integer): Boolean;
@@ -2657,7 +2684,7 @@ begin
   t.fEdit.OnMouseDown := EditMouseDown; // T5: Ctrl+Click on use '...'
   t.fEdit.WordWrap    := aWordWrap.Checked;
   t.fEdit.ImageList   := il1;
-  t.fEdit.SetFocus;
+  if t.fEdit.CanFocus then t.fEdit.SetFocus;
   if fInis.Values['Font-Name'] <> '' then t.fEdit.Font.Name := fInis.Values['Font-Name'];
   if fInis.Values['Font-Size'] <> '' then t.fEdit.Font.Size := StrToInt(fInis.Values['Font-Size']);
   if fInis.Values['RightEdge'] <> '' then t.fEdit.RightEdge := StrToInt(fInis.Values['RightEdge']);
